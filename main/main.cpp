@@ -1,6 +1,5 @@
 
-// #include <freertos/FreeRTOS.h>
-// #include <freertos/task.h>
+
 #include <config.h>
 #include <I2SOutput.h>
 #include <string.h>
@@ -11,31 +10,96 @@
 #include <dirent.h>
 
 #include "esp_log.h"
-// #include "esp_spiffs.h"
-#define MINIMP3_IMPLEMENTATION
-#define MINIMP3_ONLY_MP3
-#define MINIMP3_NO_STDIO
+
+
 #include "minimp3.h"
 
-#define MOUNT_POINT "/sdcard"
-#define PIN_NUM_MISO GPIO_NUM_12
-#define PIN_NUM_MOSI GPIO_NUM_13
-#define PIN_NUM_CLK  GPIO_NUM_14
-#define PIN_NUM_CS   GPIO_NUM_15
-#define SPI_DMA_CHAN    1
+
 
 sdmmc_host_t host = SDSPI_HOST_DEFAULT();
 sdmmc_card_t *card;
 const char mount_point[] = MOUNT_POINT;
+DIR *dr = NULL;
+struct dirent *de;  // Pointer for directory entry
+long int cur_pos = 0;
+long int target_pos = 0;
+Output *output = NULL;
+char path[1024];
+uint32_t io_num;
+static xQueueHandle gpio_evt_queue = NULL;
 
 extern "C"
 {
   void app_main();
 }
 
-void wait_for_button_push()
+static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
-  while (gpio_get_level(GPIO_BUTTON) == 1)
+    uint32_t gpio_num = (uint32_t) arg;
+    io_num = gpio_num;
+    xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
+}
+
+static void gpio_task_example(void* arg)
+{
+    uint32_t io_num;
+    for(;;) {
+        if(xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)) {
+            printf("GPIO[%d] intr, val: %d\n", io_num, gpio_get_level((gpio_num_t)io_num));
+        }
+    }
+}
+
+void init_inputs()
+{
+  gpio_config_t io_conf = {
+    .pin_bit_mask = ((1ULL<<PLAY_BUTTON) | (1ULL<<NEXT_BUTTON) | (1ULL<<BACK_BUTTON)),
+    .mode = GPIO_MODE_INPUT,
+    .pull_up_en = GPIO_PULLUP_ENABLE,
+    .pull_down_en = GPIO_PULLDOWN_DISABLE,
+    .intr_type = GPIO_INTR_NEGEDGE,
+  };
+
+  gpio_config(&io_conf);
+
+  gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
+  //start gpio task
+  xTaskCreate(gpio_task_example, "gpio_task_example", 2048, NULL, 10, NULL);
+
+    //install gpio isr service
+  gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+  
+  //hook isr handler for specific gpio pins    
+  gpio_isr_handler_add(PLAY_BUTTON, gpio_isr_handler, (void*) PLAY_BUTTON);    
+  gpio_isr_handler_add(NEXT_BUTTON, gpio_isr_handler, (void*) NEXT_BUTTON);
+  gpio_isr_handler_add(BACK_BUTTON, gpio_isr_handler, (void*) BACK_BUTTON);
+
+}
+
+void revert_path()
+{
+    int i = 0;
+    int lastPos = -1;
+
+    for (; i<1024 || path[i] == NULL; i++)
+    {
+        //the next i will always be greater than whatever is stored in lastPos
+        if (path[i] == '/')
+        {
+            lastPos = i;
+        }            
+    }
+
+    if (lastPos < 0 || path[lastPos] == NULL)
+        return;
+
+    path[lastPos] = NULL;
+
+}
+
+void wait_for_play_button_push()
+{
+  while (gpio_get_level(PLAY_BUTTON) == 1)
   {
     vTaskDelay(pdMS_TO_TICKS(100));
   }
@@ -52,11 +116,7 @@ bool mount_sd_card(void)
     // If format_if_mount_failed is set to true, SD card will be partitioned and
     // formatted in case when mounting fails.
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-// #ifdef CONFIG_EXAMPLE_FORMAT_IF_MOUNT_FAILED
-//         .format_if_mount_failed = true,
-// #else
         .format_if_mount_failed = false,
-// #endif // EXAMPLE_FORMAT_IF_MOUNT_FAILED
         .max_files = 5,
         .allocation_unit_size = 16 * 1024
     };
@@ -112,102 +172,188 @@ bool mount_sd_card(void)
     return true;
 }
 
-void list_files(void)
+void open_dir(char* name)
 {
-        struct dirent *de;  // Pointer for directory entry
-  
-    // opendir() returns a pointer of DIR type. 
-    DIR *dr = opendir(MOUNT_POINT);
-  
-    if (dr == NULL)  // opendir returns NULL if couldn't open directory
-    {
-        printf("Could not open current directory" );
+    
+    if (dr != NULL)
+        closedir(dr);    
+
+    dr = opendir(name);
+}
+
+void navigate_to_target_pos_from_curr_dir() 
+{
+    long int cur_dir = 0;
+
+    if (target_pos < 1)
         return;
+
+    //first look through the files then recurse through the dirs
+    while ((de = readdir(dr)) != NULL)
+    {
+        if (de->d_type == DT_REG)
+        {
+            cur_pos++;
+#ifdef DEBUG
+            printf("Looing at file %s in %s. Pos: %ld, Target: %ld\n", de->d_name, path, cur_pos, target_pos);
+#endif        
+            if (cur_pos == target_pos)
+            {
+#ifdef DEBUG                
+                printf("File found at pos: %ld\n", cur_pos);
+#endif        
+                return;
+            }
+            
+#ifdef DEBUG 
+            printf("Inc cur_pos to %ld\n", cur_pos);
+#endif
+        }
     }
-  
-    // Refer http://pubs.opengroup.org/onlinepubs/7990989775/xsh/readdir.html
-    // for readdir()
-        while ((de = readdir(dr)) != NULL)
-            printf("%s\n", de->d_name);
-  
-    closedir(dr);    
-    return;
+
+    rewinddir(dr);
+
+    //DIRs now
+    while ((de = readdir(dr)) != NULL)
+    {
+        if (de->d_type == DT_DIR)
+        {
+            cur_dir = telldir(dr);
+
+            strcat(path, "/");
+            strcat(path, de->d_name);
+            
+            open_dir(path);     
+#ifdef DEBUG            
+            printf("Navigating to path %s\n", path);
+#endif            
+            navigate_to_target_pos_from_curr_dir();
+
+            if (cur_pos == target_pos)
+            {
+#ifdef DEBUG                
+                printf("File found at pos: %ld\n", cur_pos);
+#endif                
+                return;
+            }
+
+            revert_path();
+#ifdef DEBUG            
+            printf("Returning to %s\n", path);
+#endif            
+            open_dir(path);   
+            seekdir(dr, cur_dir + 1);
+        }
+    }  
+#ifdef DEBUG
+    printf("No more files or dirs in %s\n", path);
+#endif    
+}
+
+void navigate_to_pos() 
+{
+    de = NULL;
+    strcpy(path, MOUNT_POINT);
+    open_dir(path); 
+    cur_pos = 0;
+    navigate_to_target_pos_from_curr_dir();
 }
 
 
-void play_task(void *param)
+void get_next_file()
+{
+    target_pos++;
+    navigate_to_pos();
+}
+
+
+void get_prev_file()
+{
+    if (target_pos > 0)
+    {
+        target_pos--;
+        navigate_to_pos();
+    }
+}
+
+bool is_mp3(char * name)
+{
+  int size = strlen(name);
+
+  if (size < 4) //should at least be '.mp3'
+    return false;
+  
+  size--; //for 0 offset
+
+  //returns true if the file ends in '.mp3', case-insensitive 
+  return (name[size] == '3'
+    && (name[size - 1] == 'p' || name[size - 1] == 'P')
+    && (name[size - 2] == 'm' || name[size - 2] == 'M')
+    && name[size - 3] == '.');
+
+}
+
+void get_next_mp3()
+{
+  long int curr = target_pos;
+  
+  do
+  {
+    get_next_file();
+  } while (de != NULL && !is_mp3(de->d_name));
+  
+  if (de == NULL)  
+  {
+    //try to go back, we probably ran out of files
+    target_pos = curr;
+    navigate_to_pos();
+    return;
+  }
+}
+
+void get_prev_mp3()
+{
+  long int curr = target_pos;
+  
+  do
+  {
+    get_prev_file();
+  } while (de != NULL && !is_mp3(de->d_name));
+  
+  if (de == NULL)  
+  {
+    //try to go back, we probably ran out of files
+    target_pos = curr;
+    navigate_to_pos();
+    return;
+  }
+}
+
+void init_audio_out()
+{
+    output = new I2SOutput(I2S_NUM_0, i2s_speaker_pins);
+    // setup the button to trigger playback - see config.h for settings
+    // gpio_set_direction(START_BUTTON, GPIO_MODE_INPUT);
+    // gpio_set_pull_mode(START_BUTTON, GPIO_PULLUP_ONLY);
+}
+
+void play_mp3(FILE *fp)
 {
 
-  list_files();
-// #ifdef VOLUME_CONTROL
-//   // set up the ADC for reading the volume control
-//   adc1_config_width(ADC_WIDTH_12Bit);
-//   adc1_config_channel_atten(ADC1_CHANNEL_7, ADC_ATTEN_DB_11);
-// #endif
-  // create the output - see config.h for settings
-// #ifdef USE_I2S
-  Output *output = new I2SOutput(I2S_NUM_0, i2s_speaker_pins);
-// #else
-//   // Output *output = new DACOutput();
-// #endif
-#ifdef I2S_SPEAKDER_SD_PIN
-  // if you I2S amp has a SD pin, you'll need to turn it on
-  gpio_set_direction(I2S_SPEAKDER_SD_PIN, GPIO_MODE_OUTPUT);
-  gpio_set_level(I2S_SPEAKDER_SD_PIN, 1);
-#endif
-  // setup the button to trigger playback - see config.h for settings
-  gpio_set_direction(GPIO_BUTTON, GPIO_MODE_INPUT);
-  gpio_set_pull_mode(GPIO_BUTTON, GPIO_PULLUP_ONLY);
-  // create the file system
-  ///////////SPIFFS spiffs("/fs");
+    short *pcm = (short *)malloc(sizeof(short) * MINIMP3_MAX_SAMPLES_PER_FRAME);
+    uint8_t *input_buf = (uint8_t *)malloc(BUFFER_SIZE);
+    if (!pcm)
+    {
+      ESP_LOGE("main", "Failed to allocate pcm memory");
+      return;
+    }
+    if (!input_buf)
+    {
+      ESP_LOGE("main", "Failed to allocate input_buf memory");
+      return;
+    }
 
-  //   esp_vfs_spiffs_conf_t conf = {
-  //     .base_path = "/spiffs",
-  //     .partition_label = NULL,
-  //     .max_files = 5,
-  //     .format_if_mount_failed = false
-  //   };
-
-  //   // Use settings defined above to initialize and mount SPIFFS filesystem.
-  //   // Note: esp_vfs_spiffs_register is an all-in-one convenience function.
-  //   esp_err_t ret = esp_vfs_spiffs_register(&conf);
-
-  //   if (ret != ESP_OK) {
-  //       if (ret == ESP_FAIL) {
-  //           ESP_LOGE("main", "Failed to mount or format filesystem");
-  //       } else if (ret == ESP_ERR_NOT_FOUND) {
-  //           ESP_LOGE("main", "Failed to find SPIFFS partition");
-  //       } else {
-  //           ESP_LOGE("main", "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
-  //       }
-  //        while (true);
-  //       //return;
-  //   }
-
-  // ESP_LOGI("main", "SPIFFS Mounted");
-
-
-
-  // setup for the mp3 decoded
-  short *pcm = (short *)malloc(sizeof(short) * MINIMP3_MAX_SAMPLES_PER_FRAME);
-  uint8_t *input_buf = (uint8_t *)malloc(BUFFER_SIZE);
-  if (!pcm)
-  {
-    ESP_LOGE("main", "Failed to allocate pcm memory");
-  }
-  if (!input_buf)
-  {
-    ESP_LOGE("main", "Failed to allocate input_buf memory");
-  }
-
-  ESP_LOGI("main", "memory allocated");
-  
-  while (true)
-  {
-    ESP_LOGI("main", "waiting for button");
-    // wait for the button to be pushed
-    wait_for_button_push();
-    // mp3 decoder state
+      // mp3 decoder state
     mp3dec_t mp3d = {};
     mp3dec_init(&mp3d);
     mp3dec_frame_info_t info = {};
@@ -218,21 +364,8 @@ void play_task(void *param)
     int bytes_read = 0;
     int file_sz = 0;
     bool is_output_started = false;
-    const char *file_name = MOUNT_POINT"/_MP3DO~2.MP3";
-    // this assumes that you have uploaded the mp3 file to the SPIFFS
-    ESP_LOGI("main", "Opening file %s", file_name);
-    FILE *fp = fopen(file_name, "r");
-    if (!fp)
-    {
-        ESP_LOGE("main", "Failed to open file");
-      continue;
-    }
 
-    fseek(fp, 0L, SEEK_END);
-    file_sz = ftell(fp);
-    rewind(fp);
-
-    while (1)
+ while (1)
     {
 #ifdef VOLUME_CONTROL
       auto adc_value = float(adc1_get_raw(VOLUME_CONTROL)) / 4096.0f;
@@ -292,21 +425,70 @@ void play_task(void *param)
         decoded += samples;
       }
       // ESP_LOGI("main", "decoded %d samples\n", decoded);
-      }
+    }
+
+  if (pcm != NULL)
+    free(pcm);
+  if (input_buf != NULL)
+    free(input_buf);
+}
+
+void play_task(void *param)
+{
+
+  init_audio_out();
+
+  // setup for the mp3 decoded
+
+
+  ESP_LOGI("main", "memory allocated");
+  
+  ESP_LOGI("main", "waiting for first play button push");
+  // wait for the button to be pushed
+  wait_for_play_button_push();
+
+  while (true)
+  {
+
+
+
+    char *file_name = path; //;MOUNT_POINT"/_MP3DO~2.MP3";
+
+///TESTING////
+    get_next_file();
+    get_next_file();
+    strcat(file_name, "/");
+    strcat(file_name, de->d_name);
+    // this assumes that you have uploaded the mp3 file to the SPIFFS
+    ESP_LOGI("main", "Opening file %s", file_name);
+    FILE *fp = fopen(file_name, "r");
+    if (!fp)
+    {
+      ESP_LOGE("main", "Failed to open file");
+      continue;
+    }
+
+    fseek(fp, 0L, SEEK_END);
+    //file_sz = ftell(fp);
+    rewind(fp);
+
+    play_mp3(fp);
+
     ESP_LOGI("main", "Finished\n");
     fclose(fp);
   }
 
-      // All done, unmount partition and disable SPI peripheral
-    esp_vfs_fat_sdcard_unmount(mount_point, card);
-    ESP_LOGI("main", "Card unmounted");
+    // All done, unmount partition and disable SPI peripheral
+  esp_vfs_fat_sdcard_unmount(mount_point, card);
+  ESP_LOGI("main", "Card unmounted");
 
-    //deinitialize the bus after all devices are removed
-    spi_bus_free(static_cast<spi_host_device_t>(host.slot));
+  //deinitialize the bus after all devices are removed
+  spi_bus_free(static_cast<spi_host_device_t>(host.slot));
 }
 
 void app_main()
 {
+  init_inputs();
   if (mount_sd_card())
   {
     xTaskCreatePinnedToCore(play_task, "task", 32768, NULL, 1, NULL, 1);
