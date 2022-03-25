@@ -18,6 +18,7 @@
 #define PLAY_BUTTON GPIO_NUM_2
 #define NEXT_BUTTON GPIO_NUM_16
 #define BACK_BUTTON GPIO_NUM_17
+#define DEBOUNCE_US 100000
 
 #define MOUNT_POINT "/sdcard"
 #define PIN_NUM_MISO GPIO_NUM_12
@@ -26,12 +27,13 @@
 #define PIN_NUM_CS   GPIO_NUM_15
 #define SPI_DMA_CHAN    1
 
+#define DISPLAY_UPDATE_INTERVAL_US 500000
 
 #define MINIMP3_IMPLEMENTATION
 #define MINIMP3_ONLY_MP3
 #define MINIMP3_NO_STDIO
-
+#define BUFFER_SIZE 1024
 #define ESP_INTR_FLAG_DEFAULT 0
-
+#define RESTART_CURRENT_US 2000000
 // i2s speaker pins definition
 extern i2s_pin_config_t i2s_speaker_pins;
