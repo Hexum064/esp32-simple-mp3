@@ -3,7 +3,7 @@
     "project_path":       "M:/ESP32/mp3-i2s-sc-card",
     "build_dir":          "M:/ESP32/mp3-i2s-sc-card/build",
     "config_file":        "M:/ESP32/mp3-i2s-sc-card/sdkconfig",
-    "config_defaults":    "",
+    "config_defaults":    "M:/ESP32/mp3-i2s-sc-card/sdkconfig.defaults",
     "app_elf":            "mp3-i2s-sc-card.elf",
     "app_bin":            "mp3-i2s-sc-card.bin",
     "git_revision":       "v4.4",

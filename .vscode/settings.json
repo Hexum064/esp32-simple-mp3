@@ -12,7 +12,12 @@
     "idf.pythonBinPathWin": "m:\\esp-idf-extension\\python_env\\idf4.4_py3.8_env\\Scripts\\python.exe",
     "idf.toolsPathWin": "m:\\esp-idf-extension",
     "files.associations": {
-        "*.ipp": "cpp"
+        "*.ipp": "cpp",
+        "cstdlib": "cpp",
+        "fstream": "cpp",
+        "complex": "cpp",
+        "i2s.h": "c",
+        "chrono": "cpp"
     },
     "idf.flashType": "UART"
 }

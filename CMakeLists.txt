@@ -6,3 +6,5 @@ cmake_minimum_required(VERSION 3.5)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(mp3-i2s-sc-card)
+
+idf_build_set_property(CONFIG_FATFS_LONG_FILENAMES "y")  
