@@ -24,12 +24,13 @@ mp3dec_t mp3d = {};
 Output *output = NULL;
 int64_t mp3_start_time;
 int64_t mp3_run_time;
-
+char file_name[1024];
 int64_t display_update_start_time;
 
 // esp_timer_handle_t periodic_timer_handle;
-// static xQueueHandle gpio_evt_queue = NULL;
 // static void periodic_timer_callback(void *arg);
+
+static xQueueHandle gpio_evt_queue = NULL;
 
 bool pause_toggle = true;
 bool play_pressed = false;
@@ -258,7 +259,7 @@ void update_display()
 	int minutes = totalSeconds / 60;
 	int seconds = totalSeconds % 60;
 
-	printf("run time: %d:%02d\n", minutes, seconds);
+	printf("%s, run time: %d:%02d\n", file_name, minutes, seconds);
 }
 
 void play_mp3(FILE *fp)
@@ -268,7 +269,7 @@ void play_mp3(FILE *fp)
 
 	init_audio_out();
 	short *pcm = (short *)malloc(sizeof(short) * MINIMP3_MAX_SAMPLES_PER_FRAME);
-	uint8_t *input_buf = (uint8_t *)malloc(BUFFER_SIZE);
+	uint8_t *input_buf = (uint8_t *)malloc(MP3_BUFFER_SIZE);
 	if (!pcm)
 	{
 		ESP_LOGE("main", "Failed to allocate pcm memory");
@@ -285,7 +286,7 @@ void play_mp3(FILE *fp)
 	// mp3dec_init(&mp3d);
 	mp3dec_frame_info_t info = {};
 	// keep track of how much data we have buffered, need to read and decoded
-	int to_read = BUFFER_SIZE;
+	int to_read = MP3_BUFFER_SIZE;
 	int buffered = 0;
 	int decoded = 0;
 	int bytes_read = 0;
@@ -407,15 +408,15 @@ void play_task(void *param)
 
 	ESP_LOGI("main", "waiting for first play button push");
 	// wait for the button to be pushed
-	wait_for_play_button_push();
+	wait_for_pause();
 	ESP_LOGI("main", "locating first mp3");
 	get_first_mp3();
 
 	while (get_current_file() != NULL)
 	{
 
-		char file_name[1024];
-		// path  = get_current_path(); //;MOUNT_POINT"/_MP3DO~2.MP3";
+		file_name[0] = NULL;
+		
 		strcpy(file_name, get_current_path());
 		strcat(file_name, "/");
 		strcat(file_name, get_current_file()->d_name);

@@ -32,7 +32,7 @@
 #define MINIMP3_IMPLEMENTATION
 #define MINIMP3_ONLY_MP3
 #define MINIMP3_NO_STDIO
-#define BUFFER_SIZE 1024
+#define MP3_BUFFER_SIZE 1024
 #define ESP_INTR_FLAG_DEFAULT 0
 #define RESTART_CURRENT_US 2000000
 // i2s speaker pins definition
