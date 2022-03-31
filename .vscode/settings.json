@@ -17,7 +17,8 @@
         "fstream": "cpp",
         "complex": "cpp",
         "i2s.h": "c",
-        "chrono": "cpp"
+        "chrono": "cpp",
+        "regex": "cpp"
     },
     "idf.flashType": "UART"
 }
