@@ -124,7 +124,12 @@ menu "SSD1306 Configuration"
 			GPIO number (IOxx) to SPI DC.
 			Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used to DC.
 			GPIOs 35-39 are input-only so cannot be used as outputs.
-
+	
+	config SPEAKER_NAME
+		string "Bluetooth Speaker Name"
+		default "Q50"
+		help
+			The name of the Bluetooth speaker to pair.
 
 endmenu
 

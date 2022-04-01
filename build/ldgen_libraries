@@ -36,6 +36,7 @@ M:/ESP32/mp3-i2s-sc-card/build/esp-idf/newlib/libnewlib.a
 M:/ESP32/mp3-i2s-sc-card/build/esp-idf/cxx/libcxx.a
 M:/ESP32/mp3-i2s-sc-card/build/esp-idf/app_trace/libapp_trace.a
 M:/ESP32/mp3-i2s-sc-card/build/esp-idf/asio/libasio.a
+M:/ESP32/mp3-i2s-sc-card/build/esp-idf/bt/libbt.a
 M:/ESP32/mp3-i2s-sc-card/build/esp-idf/cbor/libcbor.a
 M:/ESP32/mp3-i2s-sc-card/build/esp-idf/unity/libunity.a
 M:/ESP32/mp3-i2s-sc-card/build/esp-idf/cmock/libcmock.a

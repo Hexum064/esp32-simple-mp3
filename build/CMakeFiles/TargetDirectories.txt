@@ -402,6 +402,7 @@ M:/ESP32/mp3-i2s-sc-card/build/esp-idf/asio/CMakeFiles/install.dir
 M:/ESP32/mp3-i2s-sc-card/build/esp-idf/asio/CMakeFiles/edit_cache.dir
 M:/ESP32/mp3-i2s-sc-card/build/esp-idf/asio/CMakeFiles/rebuild_cache.dir
 M:/ESP32/mp3-i2s-sc-card/build/esp-idf/asio/CMakeFiles/list_install_components.dir
+M:/ESP32/mp3-i2s-sc-card/build/esp-idf/bt/CMakeFiles/__idf_bt.dir
 M:/ESP32/mp3-i2s-sc-card/build/esp-idf/bt/CMakeFiles/install/local.dir
 M:/ESP32/mp3-i2s-sc-card/build/esp-idf/bt/CMakeFiles/install.dir
 M:/ESP32/mp3-i2s-sc-card/build/esp-idf/bt/CMakeFiles/edit_cache.dir
